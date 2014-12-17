@@ -1,0 +1,241 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+% Description: 
+% Microdialysis Full Data Analysis
+% begin by importing .act file from Vitalview into workspace by dragging 
+% file with 1min sample duration into workspace and exclude rows with 
+% unnimportable data
+% 
+% then import the dialysis data as individual vectors labelled
+% appropriately i.e
+% DA - the dopamine trace
+% DOPAC - the metabolite
+% 
+% Written by Ian Blum 2013
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%% imputing variable for dialysis sampling activity
+d=input('What is the microdialysis sampling interval (minutes)');
+a=input('How long after starting activity recordings did sampling begin (in minutes)');
+
+if exist('DA','var')==1
+    b=a+length(DA)*d;
+else
+b=a+input('For how long did sampling occur (in minutes)');
+end
+
+if max(CAGE)==min(CAGE)
+    c=1;
+else
+    c=input('Which Cage are yu interested in (Cage number)');
+end
+
+e=input('What is the animal ID number (if multiple input in square brackets with spaces between)');
+dial = input('In which dialysate are you interested?');
+dial = inpaint_nans(dial,4);
+
+% Seperate data according to cage numbers
+if min(CAGE)==max(CAGE)
+    CAGE=ones(size(SAMPLE,1),1);
+end
+
+cagenuml=min(CAGE);
+cagenumh=max(CAGE);
+cagename=cagenuml:cagenumh; %create row vector for cage numbers
+% Cageind=zeros(length(CAGE)/cagenum,cagenum);
+for j=cagenuml:cagenumh
+    Cageind(:,j) = find(CAGE==j);
+end
+
+% Create matrix of time vectors for all data
+for j=cagenuml:cagenumh;
+    TIME(:,j)=SAMPLE(Cageind(:,j));
+end
+TIME=TIME./(60);
+
+% Sort parameters into columns by cage number
+for j=cagenuml:cagenumh;
+    Horact(:,j)=HACTV(Cageind(:,j));
+end
+for j=cagenuml:cagenumh;
+    Movement(:,j)=MOVNO(Cageind(:,j));
+end
+for j=cagenuml:cagenumh;
+    Totaldist(:,j)=TOTDIST(Cageind(:,j));
+end
+
+%% filtering the data using butterworth
+h=fdesign.lowpass('N,F3db',1,15,1440,'linear');
+d1 = design(h,'butter');
+Horactfilt = filtfilt(d1.sosMatrix,d1.ScaleValues,Horact);
+Movementfilt = filtfilt(d1.sosMatrix,d1.ScaleValues,Movement);
+Totaldistfilt = filtfilt(d1.sosMatrix,d1.ScaleValues,Totaldist);
+% this is for testing the filter
+% % figure
+% % plot(Horact(:,1),'b'); hold on;
+% % plot(Horactfilt(:,1),'r','linewidth',2);
+% % xlim([50 1550]);
+% % legend('Horizontal Activity','Zero-phase Filtering','location','NorthEast');
+% % hold off
+
+%% Exporting data for clocklab analysis
+
+% pad arrays with 0s until end of day then add 1. necessary for cloclab to
+% display actogram but not for L-S.
+daynum=ceil(length(TIME)/1440);
+if daynum==1
+padsize=(daynum*1440)-length(TIME);
+Horactpad=[padarray(Horact,padsize,0,'post');1];
+Horactfiltpad=[padarray(Horact,padsize,0,'post');1];
+else
+Horactpad=Horact;
+Horactfiltpad=Horactfilt; 
+end
+
+Horactcell=num2cell(Horactpad(:,c));
+Horactfiltcell=num2cell(Horactfiltpad(:,c));
+Horactexcel={num2str(e(c));'01-jan-2000';'00:00';4;1;1;'M'};
+Horactfiltexcel={num2str(e(c));'01-jan-2000';'00:00';4;1;1;'M'};
+
+
+Horactexcel=[Horactexcel; Horactcell];
+Horactfiltexcel=[Horactfiltexcel; Horactfiltcell];
+
+for n=cagenuml:cagenumh;
+filename=strcat(num2str(e(n)),'_Horactcl.awd');
+dlmcell(filename,Horactexcel);
+filenamefilt=strcat(num2str(e(n)),'_Horactfiltcl.awd');
+dlmcell(filenamefilt,Horactfiltexcel);
+end
+
+clear Horactcell Horactfiltcell Horactexcel Horactfiltexcel;
+
+%% Plotting Full Data Set
+
+    figure('Units','normalized','Position',[0 0 1 1])
+    Xtick=2:2:max(TIME);
+    startend=max(Xtick);
+    topbottom=[max(Horact); max(Movement); max(Totaldist)];
+subplot(3,1,1)
+plot(TIME(:,c),Horact(:,c),'b');hold on
+plot(TIME(:,c),Horactfilt(:,c),'r')
+xlabel('Time (Hrs)')
+set(gca,'XTick',Xtick)
+ylabel('Horizontal Activity')
+axis([0 startend 0 topbottom(1,c)])
+title(strcat('Animal # ',num2str(e(c))));
+set(gca,'XGrid','on','YGrid','off','ZGrid','off')
+
+subplot (3,1,2)
+plot(TIME(:,c),Movement(:,c),'b'); hold on
+plot(TIME(:,c),Movementfilt(:,c),'r')
+xlabel('Time (Hrs)')
+set(gca,'XTick',Xtick)
+ylabel('Nos of Movements')
+axis([0 startend 0 topbottom(2,c)])
+set(gca,'XGrid','on','YGrid','off','ZGrid','off')
+
+subplot(3,1,3)
+plot(TIME(:,c),Totaldist(:,c),'b'); hold on
+plot(TIME(:,c),Totaldistfilt(:,c),'r')
+xlabel('Time (Hrs)')
+set(gca,'XTick',Xtick)
+ylabel('Total Distance Travelled')
+axis([0 startend 0 topbottom(3,c)])
+set(gca,'XGrid','on','YGrid','off','ZGrid','off')
+
+filename=strcat(num2str(e(c)),' Locomotor Activity');
+printeps(filename);
+
+% Plotting only the horizontal activity dataset
+figure('Units','normalized','Position',[0 0 1 0.33])
+    Xtick=2:2:max(TIME(a:end));
+    if max(TIME(a:end))>(a+1439)/60
+        startend=(a+1439)/60;
+    else
+        startend=max(TIME(a:end));
+    end
+    topbottom=max(Horact(a:end,c));
+plot(TIME(a:end,c),Horact(a:end,c),'b');hold on
+xlabel('Time (Hrs)')
+set(gca,'XTick',Xtick)
+ylabel('Horizontal Activity')
+axis([a/60 startend 0 topbottom(1,c)])
+title(strcat('Animal # ',num2str(e(c))));
+set(gca,'XGrid','on','YGrid','off','ZGrid','off')
+hold off
+
+filename=strcat(num2str(e(c)),' Horizontal Activity For Recording and Beyond');
+printeps(filename);
+
+%%
+% Extracting relevant data for correlation with microdialysis
+Output=zeros(fix(size(TIME(a:b,c),1)/d),4);
+for n=1:fix(size(TIME(a:b,c),1)/d)
+    Output(n,1)=TIME(a+(n*d),c);
+    Output(n,2)=sum(Horact(a+((n-1)*d):a+(n*d)-1,c));
+    Output(n,3)=sum(Movement(a+((n-1)*d):a+(n*d)-1,c));
+    Output(n,4)=sum(Totaldist(a+((n-1)*d):a+(n*d)-1,c));
+end
+
+Outputfilt=zeros(fix(size(TIME(a:b,c),1)/d),4);
+for n=1:fix(size(TIME(a:b,c),1)/d)
+    Outputfilt(n,1)=TIME(a+(n*d),c);
+    Outputfilt(n,2)=sum(Horactfilt(a+((n-1)*d):a+(n*d)-1,c));
+    Outputfilt(n,3)=sum(Movementfilt(a+((n-1)*d):a+(n*d)-1,c));
+    Outputfilt(n,4)=sum(Totaldistfilt(a+((n-1)*d):a+(n*d)-1,c));
+end
+
+ 
+%Converting to time in days in order to export to excel
+Output(:,1)=Output(:,1)/24;
+Outputfilt(:,1)=Outputfilt(:,1)/24;
+Outputexcel=[Output;Outputfilt];
+
+
+% Exporting to excel format
+filename=strcat(num2str(e(c)),'_Microdialysis_Activity_Binned');
+xlswrite(filename,Outputexcel);
+
+%% Cross correlations of 20 min binned data to microdialysis microdialysis data
+
+% g = input('Maximum Number of lags? (leave blank if not specified)');
+
+%binning output data for cross-correlations with amine concentration
+Outputfull=zeros(fix(size(TIME(a:end,c),1)/d),4);
+for n=1:fix(size(TIME(a:end,c),1)/d)
+    Outputfull(n,1)=TIME(a+(n*d),c);
+    Outputfull(n,2)=sum(Horact(a+((n-1)*d):a+(n*d)-1,c));
+    Outputfull(n,3)=sum(Movement(a+((n-1)*d):a+(n*d)-1,c));
+    Outputfull(n,4)=sum(Totaldist(a+((n-1)*d):a+(n*d)-1,c));
+end
+
+%only for Horact for now and for a full 24 hours of lag
+[cross,lags]=xcorr(Outputfull(:,2),dial,72);
+[auto,autolags]=xcorr(Outputfull(:,2),Output(:,2),72);
+% converting lags to time
+lagstime=lags*20/60;
+pos=round(length(cross)/2);
+posit=pos*20/60;
+
+% plotting cross correlation
+Xtick=0:2:24;
+figure
+[AX,H1,H2]=plotyy(lagstime(pos:end),cross(pos:end),lagstime(pos:end),auto(pos:end));
+set(AX(1),'xlim',[0 posit]);
+set(AX(2),'xlim',[0 posit]);
+title(strcat('Animal # ',num2str(e(c))));
+xlabel('Lag(hr)')
+set(get(AX(1),'Ylabel'),'String','Cross Correlation') 
+set(get(AX(2),'Ylabel'),'String','Auto Correlation') 
+legend('Dialysis Cross Correllation','Activity Auto Correlation');
+set(AX(1),'XTick',Xtick);
+set(AX(2),'XTick',Xtick);
+
+filename=strcat(num2str(e(c)),' Cross Correlation');
+printeps(filename);
+
+%% Cosinor and FDR analysis
+per=input('What is the period estimate of the data taken from periodogram analysis');
+
+[M,Amp,phi,RSS,RSSrnda] = Cosinor_FDR(Outputfull(:,1),dial,per,e,c,Outputfull(:,2));
